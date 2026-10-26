@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "name": "simulation_dsv60",
+  "mode": "simulation",
+  "units": {
+    "distance": "mm",
+    "angle": "deg",
+    "field": "T"
+  },
+  "geometry": {
+    "radius_mm": 30,
+    "step_mm": 5,
+    "bore_radius_mm": 50,
+    "bore_length_mm": 254
+  },
+  "acquisition": {
+    "settle_time_s": 0.05,
+    "samples_per_point": 10,
+    "motion_timeout_s": 10,
+    "read_timeout_s": 1,
+    "position_tolerance_mm": 0.01,
+    "angle_tolerance_deg": 0.1,
+    "stable_time_s": 0.02,
+    "max_sensor_retries": 1
+  },
+  "simulation": {
+    "seed": 20261026,
+    "initial_sensor_position_magnet_mm": [0, 0, 0],
+    "T_base_magnet": [[0, -1, 0, 200], [1, 0, 0, -100], [0, 0, 1, 50], [0, 0, 0, 1]],
+    "rotation_base_flange": [[0, 0, 1], [0, 1, 0], [-1, 0, 0]],
+    "offset_flange_sensor_mm": [0, 0, 40],
+    "pose_frame": "flange",
+    "angle_deg": 0,
+    "sensitive_axis_magnet": [0, 0, 1],
+    "speed_mm_s": 100,
+    "move_latency_s": 0.01,
+    "base_field_T": 0.1,
+    "gradient_T_per_mm": [0.000001, -0.000002, 0.000003],
+    "quadratic_T_per_mm2": [0.00000001, 0.00000002, -0.00000001],
+    "drift_T_per_s": 0.00000001,
+    "noise_std_T": 0.0000001,
+    "sample_interval_s": 0.002,
+    "original_unit": "G",
+    "motion_fault_at_visit": null,
+    "motion_fault_mode": "timeout",
+    "sensor_fault_at_read": null,
+    "sensor_fault_mode": "timeout",
+    "sensor_fault_persistent": true
+  }
+}

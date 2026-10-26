@@ -1,0 +1,32 @@
+# Entorno y configuración local
+Plan_Codex_M1_DSV_60mm.md
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+
+# Python y herramientas de desarrollo
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Distribuciones
+build/
+dist/
+
+# Resultados de adquisición y perfiles locales del laboratorio
+runs/
+configs/*.local.json
+
+# Archivos del editor y del sistema
+.idea/
+.vscode/
+.DS_Store
+*~
