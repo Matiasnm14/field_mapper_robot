@@ -63,32 +63,25 @@ def test_complete_scan_preserves_grid_reference_and_sample_relationships(scan_co
     assert result.summary["status"] == "complete"
     assert result.summary["grid_points"] == 7
     assert result.summary["grid_points_completed"] == 7
-    assert result.summary["reference_visits_expected"] == 4
-    assert result.summary["reference_visits_completed"] == 4
-    assert result.summary["visits_expected"] == result.summary["visits_completed"] == 11
-    assert result.summary["valid_samples"] == result.summary["used_samples"] == 33
+    assert result.summary["reference_visits_expected"] == 2
+    assert result.summary["reference_visits_completed"] == 2
+    assert result.summary["visits_expected"] == result.summary["visits_completed"] == 9
+    assert result.summary["valid_samples"] == result.summary["used_samples"] == 27
     measurements = rows(result.directory, "measurements.csv")
     samples = rows(result.directory, "samples.csv")
     path = rows(result.directory, "path.csv")
-    assert len(measurements) == 11
-    assert len(samples) == 33
-    assert [int(row["visit_index"]) for row in measurements] == list(range(11))
+    assert len(measurements) == 9
+    assert len(samples) == 27
+    assert [int(row["visit_index"]) for row in measurements] == list(range(9))
     assert measurements[0]["kind"] == "reference"
     assert measurements[-1]["kind"] == "reference"
     grid = [row for row in measurements if row["kind"] == "grid"]
     references = [row for row in measurements if row["kind"] == "reference"]
     assert [row["point_id"] for row in grid] == [row["point_id"] for row in path]
     assert len({row["point_id"] for row in grid}) == 7
-    assert len(references) == 4
-    assert len({row["visit_id"] for row in measurements}) == 11
-    expected_kinds = ["reference"]
-    previous_z = None
-    for point in path:
-        if previous_z is not None and point["z_magnet_mm"] != previous_z:
-            expected_kinds.append("reference")
-        expected_kinds.append("grid")
-        previous_z = point["z_magnet_mm"]
-    expected_kinds.append("reference")
+    assert len(references) == 2
+    assert len({row["visit_id"] for row in measurements}) == 9
+    expected_kinds = ["reference"] + ["grid"] * 7 + ["reference"]
     assert [row["kind"] for row in measurements] == expected_kinds
     assert all(float(row[f"{axis}_target_magnet_mm"]) == 0 for row in references for axis in "xyz")
     for measurement in measurements:
@@ -184,15 +177,15 @@ def test_transient_sensor_failure_retries_a_whole_batch_without_moving(scan_conf
     clock, robot, sensor, _ = adapters(profile)
     result = run(profile, tmp_path / "transient", robot=robot, sensor=sensor, clock=clock)
     assert result.summary["status"] == "complete"
-    assert robot.command_count == 11
+    assert robot.command_count == 9
     measurements = rows(result.directory, "measurements.csv")
-    assert len(measurements) == 12
+    assert len(measurements) == 10
     assert measurements[0]["visit_id"] == measurements[1]["visit_id"]
     assert measurements[0]["attempt"] != measurements[1]["attempt"]
     assert measurements[0]["valid_samples"] == "1"
     assert measurements[1]["valid_samples"] == "3"
-    assert result.summary["valid_samples"] == 34
-    assert result.summary["used_samples"] == 33
+    assert result.summary["valid_samples"] == 28
+    assert result.summary["used_samples"] == 27
 
 
 def test_invalid_trajectory_is_rejected_before_output_or_connection(scan_config, config, tmp_path, monkeypatch):
@@ -365,15 +358,15 @@ def test_keyboard_interrupt_preserves_completed_visit_and_disconnects(scan_confi
     assert sensor._connected is False
 
 
-def test_main_profile_has_939_visits_and_9390_samples(config, tmp_path):
+def test_main_profile_has_927_visits_and_9270_samples(config, tmp_path):
     result = run(config, tmp_path / "main-profile")
     assert result.summary["status"] == "complete"
     assert result.summary["grid_points_completed"] == 925
-    assert result.summary["reference_visits_completed"] == 14
-    assert result.summary["visits_completed"] == 939
-    assert result.summary["used_samples"] == result.summary["valid_samples"] == 9390
-    assert len(rows(result.directory, "measurements.csv")) == 939
-    assert len(rows(result.directory, "samples.csv")) == 9390
+    assert result.summary["reference_visits_completed"] == 2
+    assert result.summary["visits_completed"] == 927
+    assert result.summary["used_samples"] == result.summary["valid_samples"] == 9270
+    assert len(rows(result.directory, "measurements.csv")) == 927
+    assert len(rows(result.directory, "samples.csv")) == 9270
 
 
 def test_interrupt_during_final_figures_closes_files_and_keeps_data(scan_config, tmp_path, monkeypatch):
@@ -393,8 +386,8 @@ def test_interrupt_during_final_figures_closes_files_and_keeps_data(scan_config,
     monkeypatch.setattr(field_visualization, "save_field_figures", interrupt_plot)
     result = run(scan_config, tmp_path / "plot-interrupt", writer_factory=capture_writer)
     assert result.summary["status"] == "cancelled"
-    assert result.summary["visits_completed"] == 11
-    assert len(rows(result.directory, "samples.csv")) == 33
+    assert result.summary["visits_completed"] == 9
+    assert len(rows(result.directory, "samples.csv")) == 27
     assert all(handle.closed for handle in writers[0]._handles)
     assert json.loads((result.directory / "metadata.json").read_text())["status"] == "cancelled"
 
@@ -415,11 +408,11 @@ def test_transient_finalization_error_updates_saved_status_to_failed(scan_config
 
     result = run(scan_config, tmp_path / "finalization-error", writer_factory=FailingFinalizationWriter)
     assert result.summary["status"] == "failed"
-    assert result.summary["visits_completed"] == 11
+    assert result.summary["visits_completed"] == 9
     assert "fallo transitorio al finalizar" in result.summary["error"]
     for name in ("summary.json", "metadata.json", "progress.json"):
         assert json.loads((result.directory / name).read_text())["status"] == "failed"
-    assert len(rows(result.directory, "samples.csv")) == 33
+    assert len(rows(result.directory, "samples.csv")) == 27
 
 
 @pytest.mark.parametrize("adapter_name", ["robot", "sensor"])

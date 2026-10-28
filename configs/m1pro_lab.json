@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "target_model": "Dobot M1 Pro",
+  "mode": "hardware",
+  "host": null,
+  "dashboard_port": 29999,
+  "move_port": 30003,
+  "feedback_port": 30004,
+  "connect_timeout_s": 3.0,
+  "command_timeout_s": 2.0,
+  "poll_interval_s": 0.05,
+  "firmware_version": null,
+  "compatible_confirmed": false,
+  "compatibility_evidence": null,
+  "motion_enabled": false,
+  "speed_l_percent": null,
+  "acc_l_percent": null,
+  "emergency_stop_confirmed": false,
+  "calibration": null
+}

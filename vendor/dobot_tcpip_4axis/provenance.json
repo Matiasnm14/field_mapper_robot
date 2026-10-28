@@ -1,0 +1,39 @@
+{
+  "reviewed_date": "2026-10-28",
+  "sdk_repository": "https://github.com/Dobot-Arm/TCP-IP-4Axis-Python",
+  "sdk_commit": "b5f95647cfc44a60f92babf5a464d38dd1e4f72c",
+  "sdk_license": "MIT",
+  "sdk_copyright": "Copyright (c) 2022 Dobot",
+  "protocol_repository": "https://github.com/Dobot-Arm/TCP-IP-Protocol-4AXis",
+  "protocol_tree": "be74b056be664d1a1a0c95c89e4ecdf950ff3ecf",
+  "incorporation": "Independent socket adapter for documented protocol subset; SDK executable source not vendored/imported; SDK license retained for provenance. Official main.py was inspected as text and never executed.",
+  "files": [
+    {
+      "source": "https://raw.githubusercontent.com/Dobot-Arm/TCP-IP-4Axis-Python/b5f95647cfc44a60f92babf5a464d38dd1e4f72c/dobot_api.py",
+      "sha256": "4fe15580adf13498de8364367546fbf3c58e0a151f4cb46d983a679d38011b1f",
+      "reviewed_only": true
+    },
+    {
+      "source": "https://raw.githubusercontent.com/Dobot-Arm/TCP-IP-4Axis-Python/b5f95647cfc44a60f92babf5a464d38dd1e4f72c/README.md",
+      "sha256": "62cddc33fa95978beaacab6d51209acd1a7ef2efb06468b9fb7d03de7338acf1",
+      "reviewed_only": true
+    },
+    {
+      "source": "https://raw.githubusercontent.com/Dobot-Arm/TCP-IP-4Axis-Python/b5f95647cfc44a60f92babf5a464d38dd1e4f72c/LICENSE",
+      "sha256": "0a77e3d967a6466037c2df91f2fc16417d6e06c781a033904aa1a96545061143",
+      "reviewed_only": false,
+      "redistributed": true
+    },
+    {
+      "source": "https://raw.githubusercontent.com/Dobot-Arm/TCP-IP-4Axis-Python/b5f95647cfc44a60f92babf5a464d38dd1e4f72c/main.py",
+      "sha256": "c921e95a661d299700d0e58c7a3086e961decfa32bfbdbf26a3c95b4922c6160",
+      "reviewed_only": true
+    },
+    {
+      "source": "https://raw.githubusercontent.com/Dobot-Arm/TCP-IP-Protocol-4AXis/be74b056be664d1a1a0c95c89e4ecdf950ff3ecf/TCP_IP%20Remote%20Control%20Interface%20Guide%20%284axis%29_20240419_en.pdf",
+      "sha256": "cae4c7dd735846994598e02b25a34eac944652e73cdee34cc71220fb87f623a0",
+      "reviewed_only": true,
+      "redistributed": false
+    }
+  ]
+}

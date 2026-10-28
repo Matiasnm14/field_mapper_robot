@@ -1,6 +1,7 @@
 """Persistencia incremental de adquisiciones simuladas y sus resultados parciales."""
 
 import csv
+from copy import deepcopy
 from datetime import datetime, timezone
 import hashlib
 from importlib.metadata import PackageNotFoundError, version
@@ -12,12 +13,13 @@ from uuid import uuid4
 
 from .config import PlanConfig
 from .planner import Trajectory, validate_trajectory
-from .storage import PATH_COLUMNS
+from .storage import PATH_COLUMNS, path_row, scan_metadata
 
 
 MEASUREMENT_COLUMNS = (
     "run_id", "visit_id", "visit_index", "point_id", "grid_visit_index", "attempt", "kind",
-    "layer_index", "status", "error", "simulated", "x_target_magnet_mm", "y_target_magnet_mm",
+    "phase", "layer_index", "layer_height_scan_mm", "status", "error", "simulated",
+    "u_target_scan_mm", "v_target_scan_mm", "h_target_scan_mm", "x_target_magnet_mm", "y_target_magnet_mm",
     "z_target_magnet_mm", "x_command_base_mm", "y_command_base_mm", "z_command_base_mm",
     "x_reported_base_mm", "y_reported_base_mm", "z_reported_base_mm", "x_sensor_magnet_mm",
     "y_sensor_magnet_mm", "z_sensor_magnet_mm", "angle_target_deg", "angle_reported_deg", "pose_frame",
@@ -83,7 +85,7 @@ class ScanWriter:
                 writer = csv.writer(handle)
                 writer.writerow(PATH_COLUMNS)
                 for index, point in enumerate(trajectory.points):
-                    writer.writerow((point.point_id, index, *point.indices, *point.position_mm, "true"))
+                    writer.writerow(path_row(point, index))
             simulation = config_dict.get("simulation")
             calibration = None
             if isinstance(simulation, dict):
@@ -93,15 +95,16 @@ class ScanWriter:
                 "mode": config.mode, "simulated": True, "hardware_connected": False,
                 "created_at_utc": _utc_now(), "units": config_dict["units"],
                 "time": {"acquisition": "shared_virtual_clock_seconds", "wall_clock": "UTC", "virtual_epoch_s": 0.0},
-                "coordinate_frame": {"origin": "bore_center", "x": "vertical", "z": "bore_axis", "handedness": "right"},
+                "coordinate_frame": {"origin": "bore_center", "x": "vertical_in_reference_mounting", "z": "bore_axis", "handedness": "right", "physical_up": "scan.h"},
                 "pose_evidence": "simulated controller pose; not independent metrological verification",
-                "point_id_scope": "integer_lattice_indices; interpret with config_used.json",
+                "point_id_scope": "scan lattice indices (iu,iv,ih); interpret with config_used.json",
                 "visit_index_base": 0, "grid_points": len(trajectory.points), "layers": trajectory.layer_count,
                 "config_sha256": hashlib.sha256(config_bytes).hexdigest(),
                 "path_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
                 "software": {"field_mapper": _installed_version("field-mapper"), "python": platform.python_version(),
                              "numpy": _installed_version("numpy"), "matplotlib": _installed_version("matplotlib")},
                 "calibration": calibration,
+                **scan_metadata(config),
             }
             _atomic_json(self.directory / "metadata.json", self._metadata)
             self._measurement_handle, self._measurements = self._open_csv("measurements.csv", MEASUREMENT_COLUMNS)
@@ -152,7 +155,7 @@ class ScanWriter:
         y solo modifica el estado en memoria después de una escritura exitosa.
         """
         metadata = dict(self._metadata)
-        for key, value in details.items():
+        for key, value in deepcopy(details).items():
             previous = metadata.get(key)
             metadata[key] = {**previous, **value} if isinstance(previous, dict) and isinstance(value, dict) else value
         metadata.update(run_id=self.run_id, simulated=True)
@@ -160,10 +163,13 @@ class ScanWriter:
         self._metadata = metadata
 
     def finish(self, summary: dict) -> None:
-        final = {**summary, "run_id": self.run_id, "simulated": True}
+        final = deepcopy({**summary, "run_id": self.run_id, "simulated": True})
         _atomic_json(self.directory / "summary.json", final)
         self.checkpoint(final)
-        metadata = {**self._metadata, "status": final["status"], "finished_at_utc": _utc_now(), "summary": final}
+        metadata = {**self._metadata, "status": final["status"], "finished_at_utc": _utc_now(), "summary": final,
+                    "runtime_phases": final.get("phases", self._metadata.get("runtime_phases", [])),
+                    "runtime_transitions": final.get("transitions", self._metadata.get("runtime_transitions", [])),
+                    "current_phase": final.get("current_phase", self._metadata.get("current_phase"))}
         _atomic_json(self.directory / "metadata.json", metadata)
         self._metadata = metadata
 

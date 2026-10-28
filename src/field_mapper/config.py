@@ -1,6 +1,6 @@
 """Perfiles estrictos de planificación y adquisición simulada."""
 
-from dataclasses import MISSING, asdict, dataclass, fields
+from dataclasses import MISSING, asdict, dataclass, field, fields
 import json
 import math
 from pathlib import Path
@@ -163,6 +163,30 @@ class SimulationConfig:
 
 
 @dataclass(frozen=True)
+class ScanConfig:
+    """Base ortonormal del barrido y política de referencias fuera de la malla."""
+
+    rotation_magnet_from_scan: tuple[tuple[float, ...], ...] = (
+        (0.0, 0.0, 1.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0),
+    )
+    up_base: tuple[float, float, float] = (0.0, 0.0, 1.0)
+    pre_reference: bool = True
+    post_reference: bool = True
+
+    def __post_init__(self) -> None:
+        rotation = _matrix(self.rotation_magnet_from_scan, 3, "rotation_magnet_from_scan")
+        RigidTransform(rotation, (0, 0, 0))
+        object.__setattr__(self, "rotation_magnet_from_scan", rotation)
+        up = _vector3(self.up_base, "up_base")
+        if not math.isclose(math.hypot(*up), 1, abs_tol=1e-10, rel_tol=0):
+            raise ValueError("up_base debe ser un vector unitario de vertical física.")
+        object.__setattr__(self, "up_base", up)
+        for name in ("pre_reference", "post_reference"):
+            if type(getattr(self, name)) is not bool:
+                raise ValueError(f"scan.{name} debe ser booleano.")
+
+
+@dataclass(frozen=True)
 class PlanConfig:
     schema_version: int
     name: str
@@ -171,6 +195,7 @@ class PlanConfig:
     geometry: GeometryConfig
     acquisition: AcquisitionConfig | None = None
     simulation: SimulationConfig | None = None
+    scan: ScanConfig = field(default_factory=ScanConfig)
 
     def __post_init__(self) -> None:
         if type(self.schema_version) is not int or self.schema_version != 1:
@@ -185,6 +210,8 @@ class PlanConfig:
             raise ValueError("acquisition debe ser una configuración validada o null.")
         if self.simulation is not None and not isinstance(self.simulation, SimulationConfig):
             raise ValueError("simulation debe ser una configuración validada o null.")
+        if not isinstance(self.scan, ScanConfig):
+            raise ValueError("scan debe ser una configuración de barrido validada.")
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -203,7 +230,7 @@ def _object(value: Any, fields: set[str], name: str, optional: set[str] | None =
 
 
 def config_from_dict(data: Any) -> PlanConfig:
-    root = _object(data, {"schema_version", "name", "mode", "units", "geometry"}, "config", {"acquisition", "simulation"})
+    root = _object(data, {"schema_version", "name", "mode", "units", "geometry"}, "config", {"acquisition", "simulation", "scan"})
     units = _object(root["units"], {"distance", "angle", "field"}, "units")
     geometry = _object(
         root["geometry"], {"radius_mm", "step_mm", "bore_radius_mm", "bore_length_mm"}, "geometry"
@@ -213,7 +240,13 @@ def config_from_dict(data: Any) -> PlanConfig:
         units=Units(**units), geometry=GeometryConfig(**geometry),
         acquisition=_optional_config(root.get("acquisition"), AcquisitionConfig, "acquisition"),
         simulation=_optional_config(root.get("simulation"), SimulationConfig, "simulation"),
+        scan=ScanConfig() if "scan" not in root else _scan_config(root["scan"]),
     )
+
+
+def _scan_config(value: Any) -> ScanConfig:
+    data = _object(value, set(), "scan", {field.name for field in fields(ScanConfig)})
+    return ScanConfig(**data)
 
 
 def _optional_config(value: Any, config_type: type, name: str):

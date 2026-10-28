@@ -32,13 +32,13 @@ def test_failed_close_updates_all_persisted_states(profile, tmp_path):
 
     result = run_simulation(profile, tmp_path / "close-error", writer_factory=FailingCloseWriter)
     assert result.summary["status"] == "failed"
-    assert result.summary["visits_completed"] == 11
+    assert result.summary["visits_completed"] == 9
     assert "simulated close error" in result.summary["error"]
     for filename in ("metadata.json", "summary.json", "progress.json"):
         saved = json.loads((result.directory / filename).read_text())
         assert saved["status"] == "failed"
     with (result.directory / "samples.csv").open(newline="") as source:
-        assert len(list(csv.DictReader(source))) == 22
+        assert len(list(csv.DictReader(source))) == 18
 
 
 @pytest.mark.parametrize("failure", ["event", "checkpoint"])

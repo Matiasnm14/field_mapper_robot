@@ -36,20 +36,20 @@ def test_complete_global_spherical_grid(config, step, count):
 
 def test_serpentine_layers_rows_spacing_and_entry_choice(config):
     trajectory = plan_trajectory(config)
-    layers = [(iz, list(points)) for iz, points in groupby(trajectory.points, key=lambda point: point.indices[2])]
-    assert [iz for iz, _ in layers] == list(range(-6, 7))
+    layers = [(ih, list(points)) for ih, points in groupby(trajectory.points, key=lambda point: point.indices[2])]
+    assert [ih for ih, _ in layers] == list(range(-6, 7))
     previous = None
     for _, layer in layers:
-        rows = [(ix, list(points)) for ix, points in groupby(layer, key=lambda point: point.indices[0])]
-        x_values = [ix for ix, _ in rows]
-        assert x_values in (sorted(x_values), sorted(x_values, reverse=True))
-        assert len(x_values) == len(set(x_values))
+        rows = [(iv, list(points)) for iv, points in groupby(layer, key=lambda point: point.indices[1])]
+        v_values = [iv for iv, _ in rows]
+        assert v_values in (sorted(v_values), sorted(v_values, reverse=True))
+        assert len(v_values) == len(set(v_values))
         previous_direction = None
         previous_row_index = None
         for row_index, (_, row) in enumerate(rows):
-            y_values = [point.indices[1] for point in row]
+            u_values = [point.indices[0] for point in row]
             if len(row) > 1:
-                differences = np.diff(y_values)
+                differences = np.diff(u_values)
                 assert np.all(differences == differences[0])
                 assert abs(differences[0]) == 1
                 if previous_direction is not None:

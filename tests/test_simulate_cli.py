@@ -31,16 +31,16 @@ def test_simulate_cli_real_headless_exports_pilot_and_figures(config, tmp_path):
     summary = json.loads((destination / "summary.json").read_text())
     assert summary["status"] == "complete"
     assert summary["grid_points_completed"] == 123
-    assert summary["reference_visits_completed"] == 8
-    assert summary["visits_completed"] == 131
-    assert summary["used_samples"] == 131 * profile.acquisition.samples_per_point
+    assert summary["reference_visits_completed"] == 2
+    assert summary["visits_completed"] == 125
+    assert summary["used_samples"] == 125 * profile.acquisition.samples_per_point
     figures = {"trajectory.png", "field_maps.png", "field_profiles.png", "reference_drift.png"}
     for filename in figures:
         assert (destination / filename).read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
     assert set(summary["figures"]) == figures
     with (destination / "measurements.csv").open(encoding="utf-8", newline="") as handle:
         measurements = list(csv.DictReader(handle))
-    assert len(measurements) == 131
+    assert len(measurements) == 125
     assert all(row["simulated"] == "true" for row in measurements)
     metadata = json.loads((destination / "metadata.json").read_text())
     assert metadata["hardware_connected"] is False

@@ -1,7 +1,6 @@
 """Adquisición exclusivamente simulada, con referencias y persistencia incremental."""
 
 from dataclasses import dataclass
-from itertools import groupby
 import math
 from pathlib import Path
 import statistics
@@ -29,6 +28,8 @@ class Visit:
     position_magnet_mm: tuple[float, float, float]
     grid_visit_index: int | None
     layer_index: int | None
+    phase: str
+    position_scan_mm: tuple[float, float, float]
 
     @property
     def visit_id(self) -> str:
@@ -45,19 +46,24 @@ class _Cancelled(Exception):
     pass
 
 
-def build_visits(trajectory: Trajectory) -> tuple[Visit, ...]:
-    """Una referencia inicial y otra después de cada capa completa."""
-    visits = [Visit(0, "p:0:0:0", "reference", (0.0, 0.0, 0.0), None, None)]
-    grid_index = 0
-    seen_layers = set()
-    for layer, points in groupby(trajectory.points, key=lambda point: point.indices[2]):
-        if layer in seen_layers:
-            raise ValueError("Las visitas de una capa deben ser contiguas en la trayectoria.")
-        seen_layers.add(layer)
-        for point in points:
-            visits.append(Visit(len(visits), point.point_id, "grid", point.position_mm, grid_index, layer))
-            grid_index += 1
-        visits.append(Visit(len(visits), "p:0:0:0", "reference", (0.0, 0.0, 0.0), None, layer))
+def build_visits(trajectory: Trajectory, pre_reference: bool = True, post_reference: bool = True) -> tuple[Visit, ...]:
+    """Referencias opcionales fuera de una única malla de altura ascendente."""
+    if type(pre_reference) is not bool or type(post_reference) is not bool:
+        raise ValueError("Las opciones de referencia deben ser booleanas.")
+    visits = []
+    center = (0.0, 0.0, 0.0)
+    if pre_reference:
+        visits.append(Visit(0, "p:0:0:0", "reference", center, None, None, "pre_reference", center))
+    previous_height = None
+    for grid_index, point in enumerate(trajectory.points):
+        height = point.indices[2]
+        if previous_height is not None and height < previous_height:
+            raise ValueError("Las alturas de la malla deben ser no decrecientes, con capas completas.")
+        previous_height = height
+        visits.append(Visit(len(visits), point.point_id, "grid", point.position_mm, grid_index,
+                            height, "grid_scan", point.position_scan_mm))
+    if post_reference:
+        visits.append(Visit(len(visits), "p:0:0:0", "reference", center, None, None, "post_reference", center))
     return tuple(visits)
 
 
@@ -151,7 +157,7 @@ def run_simulation(
         raise ValueError("simulate requiere un perfil completo y exclusivamente simulado.")
     trajectory = plan_trajectory(config) if trajectory is None else trajectory
     validate_trajectory(trajectory, config)
-    visits = build_visits(trajectory)
+    visits = build_visits(trajectory, config.scan.pre_reference, config.scan.post_reference)
     acquisition, simulation = config.acquisition, config.simulation
     if simulation.motion_fault_at_visit is not None and simulation.motion_fault_at_visit >= len(visits):
         raise ValueError("motion_fault_at_visit queda fuera de las visitas previstas.")
@@ -176,7 +182,7 @@ def run_simulation(
     summary = {
         "status": "running", "kind": "simulated_acquisition", "simulated": True,
         "run_id": writer.run_id, "grid_points": len(trajectory.points), "grid_points_completed": 0,
-        "grid_points_failed": 0, "reference_visits_expected": trajectory.layer_count + 1,
+        "grid_points_failed": 0, "reference_visits_expected": int(config.scan.pre_reference) + int(config.scan.post_reference),
         "reference_visits_completed": 0, "visits_expected": len(visits), "visits_completed": 0,
         "visits_failed": 0, "visits_cancelled": 0, "measurement_attempts": 0,
         "uncertain_measurement_writes": 0,
@@ -185,8 +191,12 @@ def run_simulation(
         "figures": [], "cleanup_errors": [], "robot_identity": None, "sensor_identity": None,
         "B_n_min_T": None, "B_n_max_T": None, "B_n_mean_T": None,
         "reference_change_T": None,
+        "reference_policy": {"pre_reference": config.scan.pre_reference, "post_reference": config.scan.post_reference,
+                             "between_layers": False},
+        "phases": [], "transitions": [], "current_phase": None,
     }
     active = None
+    active_transition = None
     active_written = False
     measurement_write_attempted = False
     last_sequence = None
@@ -198,6 +208,7 @@ def run_simulation(
             raise _Cancelled("Parada solicitada por el operador.")
 
     def event(name, **details):
+        details.setdefault("phase", summary["current_phase"])
         writer.event(name, time_s=clock.now(), **details)
 
     def safe_event(name, **details):
@@ -223,6 +234,51 @@ def run_simulation(
         summary["virtual_duration_s"] = clock.now() - virtual_start
         summary["wall_duration_s"] = time.perf_counter() - wall_start
         writer.checkpoint(summary)
+
+    def persist_runtime_state():
+        if hasattr(writer, "update_metadata"):
+            writer.update_metadata({"runtime_phases": summary["phases"],
+                                    "runtime_transitions": summary["transitions"],
+                                    "current_phase": summary["current_phase"]})
+
+    def complete_phase():
+        if summary["phases"]:
+            phase = summary["phases"][-1]
+            if phase["status"] == "running":
+                phase.update(status="complete", finished_time_s=clock.now())
+                event("phase_completed", phase=phase["phase"])
+                persist_runtime_state()
+
+    def begin_transition(visit):
+        nonlocal active_transition
+        name = visit.phase
+        previous = summary["current_phase"]
+        if previous == name:
+            return
+        complete_phase()
+        active_transition = {"transition_id": f"t:{len(summary['transitions']):06d}",
+                             "visit_id": visit.visit_id, "from_phase": previous, "to_phase": name,
+                             "status": "running", "started_time_s": clock.now(),
+                             "hardware_path_validated": False}
+        summary["transitions"].append(active_transition)
+        summary["current_phase"] = "transition"
+        persist_runtime_state()
+        event("phase_transition", from_phase=previous, to_phase=name, simulated=True,
+              hardware_path_validated=False, scope="simulated phase boundary; entry/withdrawal paths are separate")
+        event("phase_transition_started", **active_transition)
+        return active_transition
+
+    def begin_phase_after_arrival(transition):
+        nonlocal active_transition
+        transition.update(status="complete", finished_time_s=clock.now())
+        event("phase_transition_completed", **transition)
+        persist_runtime_state()
+        name = transition["to_phase"]
+        summary["current_phase"] = name
+        summary["phases"].append({"phase": name, "status": "running", "started_time_s": clock.now()})
+        persist_runtime_state()
+        event("phase_started", phase=name)
+        active_transition = None
 
     try:
         checkpoint()
@@ -250,7 +306,10 @@ def run_simulation(
             active = {
                 "visit_id": visit.visit_id, "visit_index": visit.visit_index, "point_id": visit.point_id,
                 "grid_visit_index": visit.grid_visit_index, "attempt": 1, "kind": visit.kind,
+                "phase": visit.phase,
                 "layer_index": visit.layer_index, "status": "failed", "error": None,
+                **{f"{axis}_target_scan_mm": float(value) for axis, value in zip(("u", "v", "h"), visit.position_scan_mm)},
+                "layer_height_scan_mm": visit.position_scan_mm[2] if visit.kind == "grid" else None,
                 **_position_fields("target_magnet", visit.position_magnet_mm),
                 **_position_fields("command_base", command),
                 "angle_target_deg": simulation.angle_deg, "pose_frame": simulation.pose_frame,
@@ -259,7 +318,9 @@ def run_simulation(
             }
             active_written = False
             measurement_write_attempted = False
-            event("visit_started", visit_id=visit.visit_id, kind=visit.kind, point_id=visit.point_id)
+            transition = begin_transition(visit)
+            event("visit_started", visit_id=visit.visit_id, kind=visit.kind,
+                  measurement_phase=visit.phase, point_id=visit.point_id)
             movement_started = clock.now()
             robot.move_to(command, simulation.angle_deg)
             event("motion_accepted", visit_id=visit.visit_id)
@@ -276,7 +337,11 @@ def run_simulation(
             pose = _confirmed_pose(robot, command, simulation.angle_deg, config)
             active.update(_pose_fields(pose, transform))
             active["arrived_time_s"] = clock.now()
-            event("arrived", visit_id=visit.visit_id)
+            sensor_scan = np.asarray(config.scan.rotation_magnet_from_scan).T @ transform.robot_to_magnet(pose.position_mm)
+            event("arrived", visit_id=visit.visit_id, h_sensor_scan_mm=float(sensor_scan[2]))
+            check_cancel()
+            if transition is not None:
+                begin_phase_after_arrival(transition)
             clock.sleep(acquisition.settle_time_s)
             base_row = dict(active)
 
@@ -347,9 +412,10 @@ def run_simulation(
                     summary["reference_visits_completed"] += 1
                     reference_values.append(active["B_n_mean_T"])
                 active = None  # La fila ya es persistente; un error posterior no falla esta visita.
-                event("visit_completed", visit_id=visit.visit_id, kind=visit.kind)
+                event("visit_completed", visit_id=visit.visit_id, kind=visit.kind, phase=visit.phase)
                 checkpoint()
                 break
+        complete_phase()
         summary["status"] = "complete"
     except (KeyboardInterrupt, _Cancelled) as error:
         summary["status"] = "cancelled"
@@ -358,6 +424,10 @@ def run_simulation(
         summary["status"] = "failed"
         summary["error"] = f"{type(error).__name__}: {error}"
     finally:
+        if summary["phases"] and summary["phases"][-1]["status"] == "running":
+            summary["phases"][-1].update(status=summary["status"], finished_time_s=clock.now())
+        if active_transition is not None and active_transition["status"] == "running":
+            active_transition.update(status=summary["status"], error=summary["error"], finished_time_s=clock.now())
         if summary["status"] != "complete":
             try:
                 robot.stop()
@@ -365,6 +435,8 @@ def run_simulation(
             except (Exception, KeyboardInterrupt) as error:
                 summary["cleanup_errors"].append(f"detención: {error}")
                 safe_event("stop_unconfirmed", error=str(error))
+            if active_transition is not None and active_transition["status"] in {"failed", "cancelled"}:
+                safe_event(f"phase_transition_{active_transition['status']}", **active_transition)
             if active is not None:
                 cancelled = summary["status"] == "cancelled"
                 summary["visits_cancelled" if cancelled else "visits_failed"] += 1
@@ -413,6 +485,7 @@ def run_simulation(
     summary["virtual_duration_s"] = clock.now() - virtual_start
     summary["wall_duration_s"] = time.perf_counter() - wall_start
     try:
+        persist_runtime_state()
         writer.finish(summary)
     except (Exception, KeyboardInterrupt) as error:
         summary["status"] = "cancelled" if isinstance(error, KeyboardInterrupt) else "failed"

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "name": "simulation_dsv60",
+  "name": "simulation_m1pro_dsv60_ascending",
   "mode": "simulation",
   "units": {
     "distance": "mm",
@@ -12,6 +12,12 @@
     "step_mm": 5,
     "bore_radius_mm": 50,
     "bore_length_mm": 254
+  },
+  "scan": {
+    "rotation_magnet_from_scan": [[0, 0, 1], [1, 0, 0], [0, 1, 0]],
+    "up_base": [0, 0, 1],
+    "pre_reference": true,
+    "post_reference": true
   },
   "acquisition": {
     "settle_time_s": 0.05,
@@ -26,7 +32,7 @@
   "simulation": {
     "seed": 20261026,
     "initial_sensor_position_magnet_mm": [0, 0, 0],
-    "T_base_magnet": [[0, -1, 0, 200], [1, 0, 0, -100], [0, 0, 1, 50], [0, 0, 0, 1]],
+    "T_base_magnet": [[0, 1, 0, 200], [0, 0, 1, -100], [1, 0, 0, 50], [0, 0, 0, 1]],
     "rotation_base_flange": [[0, 0, 1], [0, 1, 0], [-1, 0, 0]],
     "offset_flange_sensor_mm": [0, 0, 40],
     "pose_frame": "flange",

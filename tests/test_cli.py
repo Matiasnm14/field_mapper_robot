@@ -33,8 +33,8 @@ def test_plan_command_headless_exports_and_preserves_existing_results(config, tm
     assert len({row["point_id"] for row in rows}) == 123
     assert [int(row["visit_index"]) for row in rows] == list(range(123))
     assert all(row["simulated"] == "true" for row in rows)
-    assert rows[0]["z_magnet_mm"] == "-30.0"
-    assert rows[-1]["z_magnet_mm"] == "30.0"
+    assert rows[0]["h_scan_mm"] == "-30.0"
+    assert rows[-1]["h_scan_mm"] == "30.0"
     assert (destination / "trajectory.png").read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
     metadata = json.loads((destination / "metadata.json").read_text())
     assert metadata["simulated"] is True

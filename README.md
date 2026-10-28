@@ -1,16 +1,21 @@
-# Mapeo magnético con Dobot M1
+# Mapeo magnético con Dobot M1 Pro
 
 Proyecto para recorrer una región esférica de 60 mm de diámetro y asociar
 mediciones de campo a cada posición de una sonda. El alcance y los criterios
-de aceptación están en [Plan_Codex_M1_DSV_60mm.md](Plan_Codex_M1_DSV_60mm.md).
+de aceptación están en el [plan vigente para M1 Pro](Plan_Codex_M1Pro_DSV_60mm.md).
+El [plan anterior del M1](Plan_Codex_M1_DSV_60mm.md) se conserva como histórico.
 
 ## Estado actual
 
 Están implementadas la planificación geométrica y la adquisición simulada:
 robot y sensor sintéticos, confirmación de llegada, referencias centrales,
 muestras reproducibles, reintentos acotados, resultados parciales y gráficos.
-`plan` y `simulate` funcionan sin hardware ni SDK del fabricante. Los comandos
-`inspect-robot` y `scan` y los adaptadores reales siguen pendientes.
+`plan` y `simulate` funcionan sin hardware ni SDK del fabricante. El modelo de
+laboratorio confirmado es **Dobot M1 Pro**. `inspect-robot` permite inspección
+de consulta por TCP/IP; `scan --mode hardware` valida requisitos y todavía no
+ejecuta adquisición física. No se ha probado el robot del laboratorio.
+Los detalles del adaptador y su revisión de referencia están en
+[docs/M1PRO_SDK.md](docs/M1PRO_SDK.md).
 
 ## Instalación y pruebas
 
@@ -34,8 +39,8 @@ python -m field_mapper plan --config configs/simulation_dsv60.json
 ```
 
 El perfil usa radio de 30 mm, paso de 5 mm y BORE de referencia de radio 50 mm
-y longitud 254 mm. Produce 925 puntos de malla en 13 capas, guardados en un
-directorio nuevo `runs/plan-<identificador>/`. Para elegir otro directorio nuevo:
+y longitud 254 mm. Produce 925 puntos de malla en 13 capas horizontales, de
+altura física creciente, guardados en un directorio nuevo `runs/plan-<identificador>/`. Para elegir otro directorio nuevo:
 
 ```bash
 python -m field_mapper plan --config configs/simulation_dsv60.json --output-dir runs/mi-plan
@@ -45,12 +50,21 @@ El plan contiene `config_used.json`, `path.csv`, `trajectory.png`, `metadata.jso
 y `summary.json`. Incluye la malla y su recorrido; las referencias centrales
 se incorporan al ejecutar `simulate`. No incluye rutas físicas de entrada/salida.
 
-La retícula global incluye centro y frontera. El recorrido usa capas en `z`,
-filas en `x` y barrido alternado en `y`; entre capas selecciona la entrada más
-cercana entre cuatro orientaciones, con desempate determinista.
-`point_id` depende de los índices de la retícula y debe interpretarse junto con
-el paso del perfil. `visit_index` en `path.csv` comienza en cero y enumera solo
-la malla.
+La retícula global se define en `(u, v, h)`, incluye centro y frontera y se
+recorre de abajo hacia arriba: del punto `(0, 0, -30)` al `(0, 0, +30)` mm.
+Se completan todos los puntos de cada altura antes de subir; las filas se
+ordenan en `v` y el sentido de `u` alterna. La figura muestra las 13 capas
+horizontales y una flecha `+h`, junto con la ROI, el BORE y los extremos.
+
+`h` representa la vertical física. En el montaje de referencia,
+`(x_imán, y_imán, z_imán) = (h, u, v)`; el eje del BORE sigue siendo `z_imán`.
+El perfil sintético convierte `+h` a `+Z_base` mediante `T_base_magnet`.
+Las matrices y el vector `scan.up_base` se validan antes de exportar o mover.
+
+`point_id` depende de los índices `(iu, iv, ih)` y debe interpretarse junto con
+el paso y la base de barrido del perfil. `path.csv` conserva esos índices,
+`u_scan_mm`, `v_scan_mm`, `h_scan_mm` y las tres coordenadas del imán.
+Su `visit_index` comienza en cero y enumera solo la malla.
 
 ## Ejecutar la adquisición simulada
 
@@ -64,13 +78,27 @@ espera la estabilización configurada y solicita muestras nuevas. Un comando
 aceptado por sí solo no autoriza la lectura. El sensor se evalúa en la posición
 del punto sensible reconstruida desde la pose reportada del robot simulado.
 
-Se mide el centro al principio y después de cada capa. Con el perfil de ejemplo
-y sin fallos ni reintentos:
+Las referencias al centro son opcionales y se realizan únicamente **antes y
+después** de la malla, mediante `scan.pre_reference` y `scan.post_reference`.
+No hay retornos al centro entre capas. Las fases `pre_reference`, `grid_scan`
+y `post_reference` y sus transiciones se registran por separado; la monotonía
+de altura se verifica dentro de la malla. Cada fase empieza después de confirmar
+la llegada a su primer punto: la entrada descendente al extremo inferior y el
+retorno final al centro tienen `current_phase="transition"`. Los metadatos
+separan `runtime_phases` de `runtime_transitions`. El registro de una transición
+simulada no valida una ruta de entrada o retirada para el equipo real.
 
-| Paso | Puntos únicos | Referencias adicionales | Visitas | Muestras (10 por visita) |
+Con diez muestras por visita y sin fallos ni reintentos:
+
+| Paso | Puntos únicos | Referencias adicionales | Visitas | Muestras |
 |---|---:|---:|---:|---:|
-| 5 mm | 925 | 14 | 939 | 9.390 |
-| 10 mm, piloto | 123 | 8 | 131 | 1.310 |
+| 5 mm, ambas referencias | 925 | 2 | 927 | 9.270 |
+| 5 mm, sin referencias | 925 | 0 | 925 | 9.250 |
+| 10 mm, piloto con ambas referencias | 123 | 2 | 125 | 1.250 |
+| 10 mm, piloto sin referencias | 123 | 0 | 123 | 1.230 |
+
+Para desactivar referencias, establecer ambos indicadores en `false` en una
+copia local del perfil. Cada indicador puede activarse de forma independiente.
 
 Para el piloto, copiar `configs/simulation_dsv60.json` a
 `configs/pilot.local.json`, cambiar `geometry.step_mm` a `10` y ejecutar:
@@ -106,14 +134,14 @@ con un directorio que todavía no exista. Nunca reutiliza resultados anteriores.
 | Archivo | Contenido |
 |---|---|
 | `config_used.json` | Configuración efectiva, incluidos cambios de la CLI. |
-| `path.csv` | Puntos únicos de malla en orden de recorrido, sin referencias adicionales. |
-| `measurements.csv` | Un registro por intento de visita: referencia o malla, objetivo, orden, pose reportada, punto sensible reconstruido, tiempos, estado y estadísticas. |
+| `path.csv` | Índices `(iu,iv,ih)` y coordenadas de barrido/imán de los puntos únicos, sin referencias adicionales. |
+| `measurements.csv` | Un registro por intento de visita: fase, tipo, objetivo en barrido/imán, altura de capa, orden a la base, pose reportada, punto sensible reconstruido, tiempos, estado y estadísticas. |
 | `samples.csv` | Muestras individuales, valor/unidad originales, valor normalizado, secuencia, tiempos, evidencia de frescura y rechazos. |
-| `events.jsonl` | Conexiones, movimientos, llegada, lecturas rechazadas, reintentos y cierre. |
+| `events.jsonl` | Fases y transiciones, conexiones, movimientos, llegada, lecturas rechazadas, reintentos y cierre. |
 | `progress.json` | Último punto de control, actualizado tras cada visita completada y al finalizar. |
-| `metadata.json` | Identidades simuladas, versiones, unidades, marcos, huellas SHA-256, parámetros sintéticos y estado de la ejecución. |
+| `metadata.json` | Identidades simuladas, versiones y revisión del código, unidades, marcos, política de referencias, fases, huellas SHA-256, parámetros sintéticos y estado. |
 | `summary.json` | Estado final, contadores, errores, duraciones, estadísticas de malla y cambio entre referencias inicial/final. |
-| `trajectory.png` | ROI, BORE de referencia y recorrido de malla. |
+| `trajectory.png` | ROI, BORE de referencia, capas horizontales, flecha vertical y recorrido ascendente de malla. |
 | `field_maps.png` | Cortes centrales discretos de `B_n`, sin interpolación. |
 | `field_profiles.png` | Perfiles centrales con desviación muestral cuando está disponible. |
 | `reference_drift.png` | Referencias centrales frente al tiempo virtual. |
@@ -122,6 +150,9 @@ con un directorio que todavía no exista. Nunca reutiliza resultados anteriores.
 en cero; `grid_visit_index` enlaza con el recorrido de `path.csv`. `attempt`
 comienza en uno y distingue los lotes reintentados dentro de una visita.
 Una referencia repite el `point_id` central, pero tiene su propio `visit_id`.
+El campo `phase` de una medición identifica su fase prevista. Si falla la
+transición de entrada, se conserva la fila fallida de la visita y su fase de
+adquisición no aparece iniciada en `runtime_phases`.
 
 `valid_samples` cuenta muestras aceptadas, incluidas las de un lote que después
 falle. `used_samples` cuenta solo muestras de lotes completos que aportaron una
@@ -180,9 +211,11 @@ y `130` al cancelar la adquisición mediante interrupción del operador.
 
 ## Coordenadas y límites de la demo
 
-El origen es el centro del BORE; `x` es vertical, `z` sigue el BORE e `y` completa
-un sistema de mano derecha. La figura 3D usa la permutación cíclica `(y,z,x)`
-para mostrar `x` vertical. No se presupone que B₀ siga el BORE.
+El origen es el centro del BORE. El marco del imán conserva `x` vertical en
+el montaje de referencia y `z` longitudinal al BORE; `y` completa la mano derecha.
+El marco de barrido `(u, v, h)` permite declarar la vertical física cuando el
+montaje está girado. La figura 3D se dibuja en este marco, con `h` vertical.
+No se presupone que B₀ siga el BORE.
 
 `RigidTransform` valida rotación y traslación rígidas. `ToolTransform` convierte
 entre posición del punto sensible en el imán y pose de brida o TCP; en modo
@@ -190,15 +223,39 @@ entre posición del punto sensible en el imán y pose de brida o TCP; en modo
 y la adquisición simulada, incluida la conservación de resultados ante fallos.
 No verifican alcance, colisiones, vibración ni perturbación del campo por el robot.
 
-Quedan pendientes la identificación del M1 y su SDK/documentación, el protocolo
-del sensor, la puesta a punto de tolerancias y velocidades, la calibración física
-y rutas de entrada/salida verificadas antes de implementar operación real.
+La calibración física, el protocolo del sensor real, las tolerancias y
+velocidades de operación y las rutas de entrada/retirada siguen pendientes.
+La versión exacta de DobotStudio y el firmware del laboratorio también son
+desconocidos; no se deducen del modelo confirmado.
+
+## Inspeccionar el M1 Pro y validar el perfil de laboratorio
+
+```bash
+python -m field_mapper inspect-robot --config configs/m1pro_lab.json
+python -m field_mapper scan --config configs/m1pro_lab.json --mode hardware
+```
+
+El perfil de laboratorio conserva `host=null` y firmware desconocido.
+`inspect-robot` rechaza ese perfil antes de conectar: primero hay que introducir
+la IP real en una copia local. La inspección consulta estado, pose e identidad
+disponible; no habilita motores, mueve, limpia alarmas, reinicia ni ejecuta home.
+Antes de conectarse, el operador debe verificar el modo TCP/IP secondary
+development indicado por la documentación del controlador y contrastarlo con
+la versión exacta del programa instalado. La aplicación no cambia ese modo.
+
+`scan --mode hardware` es una puerta de validación explícita: el perfil de
+ejemplo incompleto se rechaza y el comando todavía no ejecuta adquisición
+real, incluso si se completan los datos del robot. Faltan la integración del
+sensor y las rutas físicas verificadas. No usar el perfil sintético para
+completar esos datos. Consultar [la documentación del adaptador](docs/M1PRO_SDK.md)
+para la revisión del SDK, campos requeridos y capacidades verificadas sin robot.
 
 ## Estructura
 
 ```text
 src/field_mapper/    Geometría, trayectoria, adaptadores, adquisición y exportación
-configs/            Perfiles sintéticos y documentación del esquema
+configs/            Perfiles sintéticos y plantilla incompleta de laboratorio
+docs/               Referencia y límites del adaptador TCP/IP M1 Pro
 tests/              Pruebas de geometría, simulación, fallos, persistencia y CLI
 pyproject.toml      Metadatos, dependencias y configuración de pytest
 ```
